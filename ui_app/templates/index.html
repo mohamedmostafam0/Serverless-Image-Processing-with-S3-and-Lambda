@@ -3,99 +3,189 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Uploader</title>
+    <title>Enhanced Image Uploader</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            margin: 0;
-            background-color: #f4f4f4;
+            background-color: #f8f9fa;
         }
         .container {
-            background-color: #fff;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            max-width: 700px;
+        }
+        #drop-zone {
+            border: 2px dashed #007bff;
+            border-radius: .25rem;
+            padding: 40px;
             text-align: center;
-        }
-        input[type="file"] {
-            margin-bottom: 20px;
-            border: 1px solid #ddd;
-            padding: 10px;
-            border-radius: 4px;
-        }
-        button {
-            background-color: #007bff;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 5px;
             cursor: pointer;
-            font-size: 16px;
+            background-color: #fff;
+            transition: background-color 0.2s ease-in-out;
         }
-        button:hover {
-            background-color: #0056b3;
+        #drop-zone.dragover {
+            background-color: #e9ecef;
         }
-        #message {
+        #image-preview {
+            max-width: 100%;
+            max-height: 300px;
             margin-top: 20px;
-            font-weight: bold;
+            border-radius: .25rem;
         }
-        .success {
-            color: green;
-        }
-        .error {
-            color: red;
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Upload Your Image</h1>
-        <input type="file" id="imageUpload" accept="image/*">
-        <button onclick="uploadImage()">Upload Image</button>
-        <div id="message"></div>
+    <div class="container mt-5">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h1 class="card-title text-center mb-4">Serverless Image Processor</h1>
+                
+                <div id="drop-zone">
+                    <p>Drag & Drop your image here or click to select</p>
+                    <input type="file" id="imageUpload" accept="image/*" class="d-none">
+                </div>
+
+                <div id="preview-container" class="text-center mt-3 d-none">
+                    <img id="image-preview" src="#" alt="Image preview" />
+                </div>
+
+                <div class="d-grid gap-2 mt-3">
+                    <button id="upload-btn" class="btn btn-primary" disabled>Upload Image</button>
+                </div>
+
+                <div id="status-area" class="mt-3"></div>
+            </div>
+        </div>
+
+        <div id="result-card" class="card shadow-sm mt-4 d-none">
+            <div class="card-header">
+                Processed Image
+            </div>
+            <div class="card-body text-center">
+                <img id="processed-image" src="#" class="img-fluid rounded" alt="Processed Image">
+            </div>
+        </div>
     </div>
 
     <script>
-        async function uploadImage() {
-            const fileInput = document.getElementById('imageUpload');
-            const messageDiv = document.getElementById('message');
-            messageDiv.textContent = '';
-            messageDiv.className = '';
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('imageUpload');
+        const uploadBtn = document.getElementById('upload-btn');
+        const previewContainer = document.getElementById('preview-container');
+        const imagePreview = document.getElementById('image-preview');
+        const statusArea = document.getElementById('status-area');
+        const resultCard = document.getElementById('result-card');
+        const processedImage = document.getElementById('processed-image');
 
-            if (fileInput.files.length === 0) {
-                messageDiv.textContent = 'Please select an image to upload.';
-                messageDiv.className = 'error';
+        let selectedFile;
+
+        // --- Drag and Drop Event Listeners ---
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFile(files[0]);
+            }
+        });
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) {
+                handleFile(fileInput.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                showAlert('Please select an image file.', 'danger');
                 return;
             }
+            selectedFile = file;
+            previewContainer.classList.remove('d-none');
+            imagePreview.src = URL.createObjectURL(file);
+            uploadBtn.disabled = false;
+            statusArea.innerHTML = '';
+            resultCard.classList.add('d-none');
+        }
 
-            const file = fileInput.files[0];
-            const formData = new FormData();
-            formData.append('image', file);
+        function showAlert(message, type = 'info') {
+            statusArea.innerHTML = `<div class="alert alert-${type}" role="alert">${message}</div>`;
+        }
+
+        uploadBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            uploadBtn.disabled = true;
+            showAlert('<div class="d-flex align-items-center"><strong>Uploading...</strong><div class="spinner-border ms-auto" role="status" aria-hidden="true"></div></div>', 'info');
 
             try {
-                const response = await fetch('/upload', {
-                    method: 'POST',
-                    body: formData
+                // 1. Get pre-signed URL from our backend
+                const presignResponse = await fetch(`/generate-upload-url?filename=${encodeURIComponent(selectedFile.name)}&contentType=${encodeURIComponent(selectedFile.type)}`);
+                if (!presignResponse.ok) throw new Error('Could not get upload URL.');
+                const { url } = await presignResponse.json();
+
+                // 2. Upload file directly to S3 using the pre-signed URL
+                const uploadResponse = await fetch(url, {
+                    method: 'PUT',
+                    body: selectedFile,
+                    headers: {
+                        'Content-Type': selectedFile.type
+                    }
                 });
 
-                const data = await response.json();
+                if (!uploadResponse.ok) throw new Error('S3 upload failed.');
+                
+                showAlert('Upload successful! Processing image...', 'success');
+                
+                // 3. Poll for the processed image
+                pollForProcessedImage(selectedFile.name);
 
-                if (response.ok) {
-                    messageDiv.textContent = data.message;
-                    messageDiv.className = 'success';
-                } else {
-                    messageDiv.textContent = `Error: ${data.error || response.statusText}`;
-                    messageDiv.className = 'error';
-                }
             } catch (error) {
-                messageDiv.textContent = `An unexpected error occurred: ${error.message}`;
-                messageDiv.className = 'error';
+                showAlert(`Error: ${error.message}`, 'danger');
+                uploadBtn.disabled = false;
             }
+        });
+
+        function pollForProcessedImage(originalFilename) {
+            const processedFilename = `processed-${originalFilename}`;
+            let attempts = 0;
+            const maxAttempts = 30; // Poll for 30 seconds
+            const interval = 1000; // 1 second
+
+            const intervalId = setInterval(async () => {
+                if (attempts >= maxAttempts) {
+                    clearInterval(intervalId);
+                    showAlert('Processing timed out. Please check the logs.', 'warning');
+                    return;
+                }
+                try {
+                    const response = await fetch(`/get-processed-image-url?filename=${encodeURIComponent(processedFilename)}`);
+                    if (response.ok) {
+                        const { url } = await response.json();
+                        clearInterval(intervalId);
+                        processedImage.src = url;
+                        resultCard.classList.remove('d-none');
+                        showAlert('Processing complete!', 'success');
+                        uploadBtn.disabled = false;
+                    } else {
+                        // Not found yet, keep polling
+                        attempts++;
+                    }
+                } catch (error) {
+                    // Network or other error, stop polling
+                    clearInterval(intervalId);
+                    showAlert('Error while checking for processed image.', 'danger');
+                }
+            }, interval);
         }
     </script>
 </body>

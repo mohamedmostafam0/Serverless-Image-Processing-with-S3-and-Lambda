@@ -73,7 +73,8 @@ class CdkDeploymentStack(Stack):
         api = apigw.RestApi(
             self, "ImageUploadApi",
             rest_api_name="Image Upload Service",
-            description="This service handles image uploads to S3."
+            description="This service handles image uploads to S3.",
+            binary_media_types=["*/*"]
         )
 
         # IAM Role for API Gateway to write to S3

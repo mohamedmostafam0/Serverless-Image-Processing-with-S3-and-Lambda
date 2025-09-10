@@ -1,8 +1,13 @@
 FROM public.ecr.aws/lambda/python:3.11
 
-# Copy function code
-COPY lambda_function.py ${LAMBDA_TASK_ROOT}
+# Create and set the working directory
+WORKDIR /asset
 
-# Install the specified packages
+# Copy the requirements file
 COPY requirements.txt .
-RUN pip install -r requirements.txt --target ${LAMBDA_TASK_ROOT}
+
+# Install dependencies into the asset directory
+RUN pip install -r requirements.txt -t .
+
+# Copy the Lambda function code
+COPY lambda_function.py .

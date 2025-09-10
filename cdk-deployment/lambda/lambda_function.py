@@ -1,6 +1,6 @@
 import boto3
 import os
-import tempfile
+import io
 from PIL import Image
 import datetime
 import logging
@@ -27,59 +27,52 @@ def handler(event, context):
         logger.info(f"Processing image: {src_key} from bucket: {src_bucket}")
 
         try:
-            with tempfile.NamedTemporaryFile() as tmp_in, tempfile.NamedTemporaryFile(suffix=".jpg") as tmp_out:
-                # Download original image
-                try:
-                    s3.download_file(src_bucket, src_key, tmp_in.name)
-                    logger.info(f"Successfully downloaded {src_key}")
-                except Exception as e:
-                    logger.error(f"Error downloading {src_key}: {e}")
-                    continue # Skip to the next record
+            # Download original image into memory
+            in_mem_file = io.BytesIO()
+            s3.download_fileobj(src_bucket, src_key, in_mem_file)
+            logger.info(f"Successfully downloaded {src_key}")
+            in_mem_file.seek(0)
 
-                # Open and process image
-                try:
-                    with Image.open(tmp_in.name) as img:
-                        original_width, original_height = img.size
-                        # Dummy processing: resize and compress
-                        img = img.resize((img.width // 2, img.height // 2))
-                        processed_width, processed_height = img.size
-                        img.save(tmp_out.name, "JPEG", optimize=True, quality=70)
-                    logger.info(f"Successfully processed {src_key}")
-                except Exception as e:
-                    logger.error(f"Error processing image {src_key}: {e}")
-                    continue # Skip to the next record
+            
 
-                # Upload processed image to target bucket
-                dest_key = f"processed-{os.path.basename(src_key)}"
-                try:
-                    s3.upload_file(tmp_out.name, processed_bucket, dest_key)
-                    processed_file_size = os.path.getsize(tmp_out.name)
-                    logger.info(f"Successfully uploaded processed image {dest_key} to {processed_bucket}")
-                except Exception as e:
-                    logger.error(f"Error uploading processed image {dest_key}: {e}")
-                    continue # Skip to the next record
+            # Open and process image from memory
+            with Image.open(in_mem_file) as img:
+                original_width, original_height = img.size
+                # Dummy processing: resize and compress
+                img = img.resize((img.width // 2, img.height // 2))
+                processed_width, processed_height = img.size
+                
+                # Save processed image to an in-memory buffer
+                out_mem_file = io.BytesIO()
+                img.save(out_mem_file, "JPEG", optimize=True, quality=70)
+                out_mem_file.seek(0)
+            logger.info(f"Successfully processed {src_key}")
 
-                # Store metadata in DynamoDB
-                try:
-                    timestamp = datetime.datetime.now().isoformat()
-                    metadata_table.put_item(
-                        Item={
-                            "image_key": src_key,
-                            "original_bucket": src_bucket,
-                            "original_key": src_key,
-                            "processed_bucket": processed_bucket,
-                            "processed_key": dest_key,
-                            "timestamp": timestamp,
-                            "original_size_bytes": original_file_size,
-                            "processed_size_bytes": processed_file_size,
-                            "original_dimensions": f"{original_width}x{original_height}",
-                            "processed_dimensions": f"{processed_width}x{processed_height}",
-                        }
-                    )
-                    logger.info(f"Successfully stored metadata for {src_key} in DynamoDB.")
-                except Exception as e:
-                    logger.error(f"Error storing metadata for {src_key} in DynamoDB: {e}")
-                    continue # Skip to the next record
+            # Get processed file size
+            processed_file_size = out_mem_file.getbuffer().nbytes
+
+            # Upload processed image from memory to target bucket
+            dest_key = f"processed-{os.path.basename(src_key)}"
+            s3.upload_fileobj(out_mem_file, processed_bucket, dest_key)
+            logger.info(f"Successfully uploaded processed image {dest_key} to {processed_bucket}")
+
+            # Store metadata in DynamoDB
+            timestamp = datetime.datetime.now().isoformat()
+            metadata_table.put_item(
+                Item={
+                    "image_key": src_key,
+                    "original_bucket": src_bucket,
+                    "original_key": src_key,
+                    "processed_bucket": processed_bucket,
+                    "processed_key": dest_key,
+                    "timestamp": timestamp,
+                    "original_size_bytes": original_file_size,
+                    "processed_size_bytes": processed_file_size,
+                    "original_dimensions": f"{original_width}x{original_height}",
+                    "processed_dimensions": f"{processed_width}x{processed_height}",
+                }
+            )
+            logger.info(f"Successfully stored metadata for {src_key} in DynamoDB.")
 
         except Exception as e:
             logger.critical(f"Unhandled error processing record for {src_key}: {e}")

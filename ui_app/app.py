@@ -1,71 +1,70 @@
-from flask import Flask, request, render_template, jsonify
-import requests
+from flask import Flask, request, jsonify, render_template
 import boto3
-from botocore.auth import SigV4Auth
-from botocore.awsrequest import AWSRequest
+from botocore.exceptions import ClientError
 import os
-import urllib.parse
 
 app = Flask(__name__)
 
-# --- Configuration (Replace with your actual API Gateway URL) ---
-API_GATEWAY_URL = "https://8jzs16qcj9.execute-api.us-east-1.amazonaws.com/prod/upload/"
+# --- Configuration ---
+# These should match the bucket names in your CDK stack
+UPLOAD_BUCKET = "uploaded-images-bucket-20250910"
+PROCESSED_BUCKET = "processed-images-bucket-20250910"
+REGION = boto3.Session().region_name or "us-east-1"
 
-# --- AWS Session and Credentials ---
-session = boto3.Session()
-credentials = session.get_credentials()
-region = session.region_name
+s3_client = boto3.client('s3', region_name=REGION)
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/upload', methods=['POST'])
-def upload_image():
-    if 'image' not in request.files:
-        return jsonify({"error": "No image file provided"}), 400
+@app.route('/generate-upload-url')
+def generate_upload_url():
+    filename = request.args.get('filename')
+    content_type = request.args.get('contentType')
 
-    image_file = request.files['image']
-    if image_file.filename == '':
-        return jsonify({"error": "No selected file"}), 400
+    if not filename or not content_type:
+        return jsonify({"error": "Missing filename or contentType"}), 400
 
     try:
-        image_data = image_file.read()
-        s3_object_key = urllib.parse.unquote(image_file.filename)
-        content_type = image_file.content_type
-
-        url = API_GATEWAY_URL + s3_object_key
-        method = "PUT"
-
-        # Create an AWSRequest object
-        aws_request = AWSRequest(
-            method=method,
-            url=url,
-            data=image_data,
-            headers={'Content-Type': content_type}
+        presigned_url = s3_client.generate_presigned_url(
+            'put_object',
+            Params={
+                'Bucket': UPLOAD_BUCKET,
+                'Key': filename,
+                'ContentType': content_type
+            },
+            ExpiresIn=3600  # URL expires in 1 hour
         )
+        return jsonify({"url": presigned_url})
+    except ClientError as e:
+        return jsonify({"error": str(e)}), 500
 
-        # Sign the request
-        SigV4Auth(credentials, 'execute-api', region).add_auth(aws_request)
+@app.route('/get-processed-image-url')
+def get_processed_image_url():
+    filename = request.args.get('filename')
+    if not filename:
+        return jsonify({"error": "Missing filename"}), 400
 
-        # Convert AWSRequest to requests.Request
-        prepared_request = requests.Request(
-            method=aws_request.method,
-            url=aws_request.url,
-            headers=aws_request.headers,
-            data=aws_request.body
-        ).prepare()
+    try:
+        # First, check if the object exists
+        s3_client.head_object(Bucket=PROCESSED_BUCKET, Key=filename)
 
-        # Send the request
-        response = requests.Session().send(prepared_request)
-
-        if response.status_code == 200:
-            return jsonify({"message": f"Successfully uploaded {s3_object_key}"}), 200
-        else:
-            return jsonify({"error": f"Failed to upload image: {response.text}"}), response.status_code
-
-    except Exception as e:
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+        # If it exists, generate the presigned URL
+        presigned_url = s3_client.generate_presigned_url(
+            'get_object',
+            Params={
+                'Bucket': PROCESSED_BUCKET,
+                'Key': filename
+            },
+            ExpiresIn=3600 # URL expires in 1 hour
+        )
+        return jsonify({"url": presigned_url})
+    except ClientError as e:
+        # If the error is a 404 Not Found, it means the file is not processed yet
+        if e.response['Error']['Code'] == '404':
+            return jsonify({"error": "File not found"}), 404
+        # For other errors, return a 500
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
