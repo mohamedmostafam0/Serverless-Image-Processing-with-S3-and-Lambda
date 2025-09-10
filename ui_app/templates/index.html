@@ -70,6 +70,8 @@
     </div>
 
     <script>
+        const API_BASE_URL = 'https://dcimmehj41.execute-api.us-east-1.amazonaws.com/prod';
+
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('imageUpload');
         const uploadBtn = document.getElementById('upload-btn');
@@ -129,8 +131,21 @@
 
             try {
                 // 1. Get pre-signed URL from our backend
-                const presignResponse = await fetch(`/generate-upload-url?filename=${encodeURIComponent(selectedFile.name)}&contentType=${encodeURIComponent(selectedFile.type)}`);
-                if (!presignResponse.ok) throw new Error('Could not get upload URL.');
+                const presignResponse = await fetch(`${API_BASE_URL}/generate-upload-url`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filename: selectedFile.name,
+                        contentType: selectedFile.type
+                    })
+                });
+                
+                if (!presignResponse.ok) {
+                    const errorData = await presignResponse.json();
+                    throw new Error(`Could not get upload URL: ${errorData.error}`);
+                }
                 const { url } = await presignResponse.json();
 
                 // 2. Upload file directly to S3 using the pre-signed URL
@@ -168,7 +183,7 @@
                     return;
                 }
                 try {
-                    const response = await fetch(`/get-processed-image-url?filename=${encodeURIComponent(processedFilename)}`);
+                    const response = await fetch(`${API_BASE_URL}/get-processed-image-url?filename=${encodeURIComponent(processedFilename)}`);
                     if (response.ok) {
                         const { url } = await response.json();
                         clearInterval(intervalId);

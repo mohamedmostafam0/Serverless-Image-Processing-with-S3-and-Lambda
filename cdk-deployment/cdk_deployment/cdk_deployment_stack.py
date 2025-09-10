@@ -19,7 +19,15 @@ class CdkDeploymentStack(Stack):
             self, "UploadedImagesBucket",
             bucket_name="uploaded-images-bucket-20250910",
             removal_policy=RemovalPolicy.DESTROY,  # dev only
-            auto_delete_objects=True
+            auto_delete_objects=True,
+            cors=[
+                s3.CorsRule(
+                    allowed_methods=[s3.HttpMethods.PUT, s3.HttpMethods.POST, s3.HttpMethods.GET, s3.HttpMethods.HEAD],
+                    allowed_origins=["*"],
+                    allowed_headers=["*"],
+                    exposed_headers=["ETag"]
+                )
+            ]
         )
 
         # S3 Bucket for processed images
@@ -69,76 +77,52 @@ class CdkDeploymentStack(Stack):
             s3n.LambdaDestination(lambda_fn)
         )
 
-        # API Gateway for image uploads
-        api = apigw.RestApi(
-            self, "ImageUploadApi",
-            rest_api_name="Image Upload Service",
-            description="This service handles image uploads to S3.",
-            binary_media_types=["*/*"]
-        )
+        # --- API Gateway for generating pre-signed URLs ---
 
-        # IAM Role for API Gateway to write to S3
-        api_gateway_s3_role = iam.Role(
-            self, "ApiGatewayS3Role",
-            assumed_by=iam.ServicePrincipal("apigateway.amazonaws.com"),
-            inline_policies={
-                "s3-put-object": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            actions=["s3:PutObject"],
-                            resources=[uploaded_bucket.arn_for_objects("*")]
-                        )
-                    ]
-                )
+        # Lambda function to generate pre-signed URLs
+        presign_lambda = _lambda.Function(
+            self, "PresignLambda",
+            runtime=_lambda.Runtime.PYTHON_3_11,
+            handler="presign_handler.handler",
+            code=_lambda.Code.from_asset("presign_lambda"),
+            environment={
+                "UPLOAD_BUCKET": uploaded_bucket.bucket_name,
+                "PROCESSED_BUCKET": processed_bucket.bucket_name,
             }
         )
 
-        # Create a resource for image uploads
-        upload_resource = api.root.add_resource("upload")
-        object_resource = upload_resource.add_resource("{object}")
+        # Grant the presign lambda permissions for both buckets
+        uploaded_bucket.grant_put(presign_lambda)
+        processed_bucket.grant_read(presign_lambda)
 
-        # Add a PUT method to the /upload/{object} resource
-        object_resource.add_method(
-            "PUT",
-            apigw.AwsIntegration(
-                service="s3",
-                integration_http_method="PUT",
-                path=f"{uploaded_bucket.bucket_name}/{{object}}",
-                options=apigw.IntegrationOptions(
-                    credentials_role=api_gateway_s3_role,
-                    request_parameters={
-                        "integration.request.path.object": "method.request.path.object",
-                        "integration.request.header.Content-Type": "method.request.header.Content-Type"
-                    },
-                    integration_responses=[
-                        apigw.IntegrationResponse(
-                            status_code="200",
-                            response_parameters={
-                                "method.response.header.Content-Type": "integration.response.header.Content-Type"
-                            }
-                        )
-                    ],
-                    passthrough_behavior=apigw.PassthroughBehavior.WHEN_NO_MATCH,
-                )
-            ),
-            method_responses=[
-                apigw.MethodResponse(
-                    status_code="200",
-                    response_parameters={
-                        "method.response.header.Content-Type": True
-                    }
-                )
-            ],
-            request_parameters={
-                "method.request.path.object": True,
-                "method.request.header.Content-Type": True
-            },
-            authorization_type=apigw.AuthorizationType.IAM
+        # API Gateway to trigger the presign lambda
+        api = apigw.RestApi(
+            self, "PresignApi",
+            rest_api_name="Image URL Service",
+            description="This service generates pre-signed URLs for image uploads and downloads.",
+            default_cors_preflight_options=apigw.CorsOptions(
+                allow_origins=apigw.Cors.ALL_ORIGINS,
+                allow_methods=apigw.Cors.ALL_METHODS
+            )
         )
 
-        # Output the API Gateway endpoint URL
+        # Add a /generate-upload-url resource and a POST method
+        generate_upload_url_resource = api.root.add_resource("generate-upload-url")
+        generate_upload_url_resource.add_method(
+            "POST",
+            apigw.LambdaIntegration(presign_lambda)
+        )
+
+        # Add a /get-processed-image-url resource and a GET method
+        get_processed_image_url_resource = api.root.add_resource("get-processed-image-url")
+        get_processed_image_url_resource.add_method(
+            "GET",
+            apigw.LambdaIntegration(presign_lambda)
+        )
+
+        # Output the API Gateway URL
         cdk.CfnOutput(
-            self, "ApiGatewayUrl",
-            value=api.url_for_path("/upload/{object}"),
-            description="API Gateway endpoint for image uploads"
+            self, "UploadApiUrl",
+            value=api.url,
+            description="API Gateway endpoint for generating pre-signed upload URLs"
         )
