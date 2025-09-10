@@ -2,7 +2,7 @@
 
 This project implements a robust and scalable serverless application for processing images. It leverages AWS services to automatically resize and store images uploaded via a modern web interface.
 
-## Key Features & Enhancements
+## Key Features 
 
 *   **Modern UI:** A user-friendly web interface built with Bootstrap 5, featuring drag-and-drop functionality and real-time upload/processing feedback.
 *   **Secure Uploads (AWS Best Practice):** Implements pre-signed S3 URLs for direct, secure, and efficient image uploads from the client to S3, bypassing the backend server for data transfer.
@@ -48,7 +48,7 @@ The application follows a serverless, event-driven architecture:
 
 1.  **Clone the repository:**
     ```bash
-    git clone <your-repo-url>
+    git clone https://github.com/mohamedmostafam0/Serverless-Image-Processing-with-S3-and-Lambda.git
     cd Serverless-Image-Processing-with-S3-and-Lambda
     ```
 
@@ -80,8 +80,6 @@ The application follows a serverless, event-driven architecture:
 
 1.  **Open the UI:** Navigate to the `ui_app/templates/` directory.
 2.  **Launch in Browser:** Open the `index.html` file directly in your web browser.
-
-    *Note: The UI is now a static HTML/JavaScript application and does not require a local Flask server to run.*
 
 ## Usage
 
