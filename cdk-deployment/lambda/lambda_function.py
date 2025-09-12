@@ -5,8 +5,6 @@ from PIL import Image
 import datetime
 import logging
 
-# Added a comment to force redeployment
-
 # Configure logging
 logger = logging.getLogger()
 logger.setLevel(os.environ.get('LOG_LEVEL', 'INFO'))
@@ -23,7 +21,6 @@ def handler(event, context):
         src_bucket = record["s3"]["bucket"]["name"]
         src_key = record["s3"]["object"]["key"]
         original_file_size = record["s3"]["object"]["size"]
-
         logger.info(f"Processing image: {src_key} from bucket: {src_bucket}")
 
         try:

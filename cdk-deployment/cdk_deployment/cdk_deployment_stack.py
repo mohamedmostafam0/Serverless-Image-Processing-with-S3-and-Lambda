@@ -77,6 +77,7 @@ class CdkDeploymentStack(Stack):
             s3n.LambdaDestination(lambda_fn)
         )
 
+
         # --- API Gateway for generating pre-signed URLs ---
 
         # Lambda function to generate pre-signed URLs
@@ -94,6 +95,7 @@ class CdkDeploymentStack(Stack):
         # Grant the presign lambda permissions for both buckets
         uploaded_bucket.grant_put(presign_lambda)
         processed_bucket.grant_read(presign_lambda)
+
 
         # API Gateway to trigger the presign lambda
         api = apigw.RestApi(
