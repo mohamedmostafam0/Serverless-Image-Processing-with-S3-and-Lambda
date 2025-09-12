@@ -34,34 +34,37 @@ The frontend application interacts with the backend API Gateway to get presigned
 ### Image Upload Flow
 
 1.  **Request a Presigned URL for Upload:**
-    *   The user selects an image to upload in the browser.
-    *   The browser sends a `POST` request to the `/generate-upload-url` endpoint of the API Gateway.
-    *   The request body is a JSON object containing the `filename` and `contentType` of the image.
+
+    - The user selects an image to upload in the browser.
+    - The browser sends a `POST` request to the `/generate-upload-url` endpoint of the API Gateway.
+    - The request body is a JSON object containing the `filename` and `contentType` of the image.
 
 2.  **Generate the Presigned URL:**
-    *   The API Gateway triggers the `presign_lambda` function.
-    *   The Lambda function receives the request and generates a presigned URL that allows a `PUT` operation on the `uploaded-images-bucket` with the specified `filename` and `contentType`.
-    *   This URL is temporary and expires after a short period (currently 1 hour).
+
+    - The API Gateway triggers the `presign_lambda` function.
+    - The Lambda function receives the request and generates a presigned URL that allows a `PUT` operation on the `uploaded-images-bucket` with the specified `filename` and `contentType`.
+    - This URL is temporary and expires after a short period (currently 1 hour).
 
 3.  **Upload the Image to S3:**
-    *   The Lambda function returns the presigned URL to the browser.
-    *   The browser then uses this URL to upload the image file directly to S3 with a `PUT` request. The request body is the image file itself.
+    - The Lambda function returns the presigned URL to the browser.
+    - The browser then uses this URL to upload the image file directly to S3 with a `PUT` request. The request body is the image file itself.
 
 ### Processed Image Retrieval Flow
 
 1.  **Poll for the Processed Image:**
-    *   After the image is successfully uploaded, the browser begins to poll the `/get-processed-image-url` endpoint of the API Gateway.
-    *   It sends a `GET` request with the `filename` of the *processed* image as a query parameter (e.g., `processed-my-image.jpg`).
+
+    - After the image is successfully uploaded, the browser begins to poll the `/get-processed-image-url` endpoint of the API Gateway.
+    - It sends a `GET` request with the `filename` of the _processed_ image as a query parameter (e.g., `processed-my-image.jpg`).
 
 2.  **Check for the Image and Generate a Presigned URL:**
-    *   The API Gateway triggers the `presign_lambda` function for each polling request.
-    *   The Lambda function checks if the requested file exists in the `processed-images-bucket`.
-    *   If the file exists, the Lambda generates a presigned URL that allows a `GET` operation on the `processed-images-bucket`.
-    *   If the file does not exist, the Lambda returns a 404 error, and the browser continues to poll.
+
+    - The API Gateway triggers the `presign_lambda` function for each polling request.
+    - The Lambda function checks if the requested file exists in the `processed-images-bucket`.
+    - If the file exists, the Lambda generates a presigned URL that allows a `GET` operation on the `processed-images-bucket`.
+    - If the file does not exist, the Lambda returns a 404 error, and the browser continues to poll.
 
 3.  **Display the Processed Image:**
-    *   Once the browser receives a presigned URL for the processed image, it uses the URL as the `src` for an `<img>` tag to display the image to the user.
-
+    - Once the browser receives a presigned URL for the processed image, it uses the URL as the `src` for an `<img>` tag to display the image to the user.
 
 ## Key AWS Services Used
 
